@@ -10,6 +10,13 @@ class User(AbstractUser):
     address = models.TextField(blank=True, null=True)
     phone_number = models.CharField(max_length=15, blank=True, null=True)
 
+    # profile fields
+    bio = models.TextField(blank=True, null=True)
+    avatar = models.ImageField(upload_to="avatars/", null=True, blank=True)
+    facebook = models.URLField(blank=True, null=True)
+    twitter = models.URLField(blank=True, null=True)
+    linkedin = models.URLField(blank=True, null=True)
+
     # role field
     CLIENT = 'Client'
     ADMIN = 'Admin'
