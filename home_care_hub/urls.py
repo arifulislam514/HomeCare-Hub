@@ -12,9 +12,9 @@ schema_view = get_schema_view(
     openapi.Info(
         title="Home Care Hub API",
         default_version='v1',
-        description="API Documentation for Phimart E-commerce Project",
+        description="API Documentation for Home Care Hub Project",
         terms_of_service="https://www.google.com/policies/terms/",
-        contact=openapi.Contact(email="contact@phimart.com"),
+        contact=openapi.Contact(email="contact@homecarehub.com"),
         license=openapi.License(name="BSD License"),
     ),
     public=True,
