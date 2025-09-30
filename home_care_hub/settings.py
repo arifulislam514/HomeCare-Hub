@@ -185,7 +185,7 @@ SWAGGER_SETTINGS = {
 }
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173/", #react dev server
+    "http://localhost:5173", #react dev server
 ]
 
 cloudinary.config(
@@ -194,3 +194,9 @@ cloudinary.config(
     api_secret=config('api_secret'),
     secure=True
 )
+
+SSLCOMMERZ = {
+    'store_id': config('store_id'),
+    'store_pass': config('store_pass'),
+    'is_sandbox': True
+}
