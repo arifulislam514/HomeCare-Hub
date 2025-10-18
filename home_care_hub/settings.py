@@ -186,6 +186,7 @@ SWAGGER_SETTINGS = {
 
 CORS_ALLOWED_ORIGINS = [
     "https://home-care-hub-frontend.vercel.app", #react dev server
+    "http://localhost:5173", #Localhost for Vite
 ]
 
 cloudinary.config(
