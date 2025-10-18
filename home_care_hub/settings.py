@@ -185,7 +185,7 @@ SWAGGER_SETTINGS = {
 }
 
 CORS_ALLOWED_ORIGINS = [
-    "https://home-care-hub-frontend.vercel.app/", #react dev server
+    "https://home-care-hub-frontend.vercel.app", #react dev server
 ]
 
 cloudinary.config(
