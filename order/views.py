@@ -1,3 +1,4 @@
+from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from decouple import config
 from rest_framework.mixins import CreateModelMixin, RetrieveModelMixin, DestroyModelMixin
@@ -113,31 +114,47 @@ def initiate_payment(request):
         return Response({"detail": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
     
     user = request.user
-    amount = request.data.get("amount")
-    order_id = request.data.get("orderId")
-    num_items = request.data.get("numItems")
     
+    order_id     = request.data.get("order_id") or request.data.get("orderId")
+    raw_amount   = request.data.get("amount")
+    raw_numitems = request.data.get("num_items") or request.data.get("numItems")
+    
+    if not order_id:
+        return Response({"error": "Missing order_id"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # 1) Fetch order FIRST (so we can safely refer to it later)
     try:
-        order = Order.objects.prefetch_related('items').get(pk=order_id, user=user, status=Order.NOT_PAID)
+        order = Order.objects.prefetch_related('items').get(
+            pk=order_id, user=user, status=Order.NOT_PAID
+        )
     except Order.DoesNotExist:
         return Response({"error": "Invalid order"}, status=status.HTTP_400_BAD_REQUEST)
 
+    # 2) Validate amount
     try:
-        amount = Decimal(str(amount))
+        amount = Decimal(str(raw_amount))
     except (InvalidOperation, TypeError):
         return Response({"error": "Invalid amount"}, status=status.HTTP_400_BAD_REQUEST)
 
     if amount != order.total_price:
         return Response({"error": "Amount mismatch"}, status=status.HTTP_400_BAD_REQUEST)
 
-    if int(num_items) != order.items.count():
+    # 3) Validate num_items
+    try:
+        num_items = int(raw_numitems)
+    except (TypeError, ValueError):
+        return Response({"error": "Invalid or missing num_items"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if num_items != order.items.count():
         return Response({"error": "Item count mismatch"}, status=status.HTTP_400_BAD_REQUEST)
-    
+
+    # 4) SSLCommerz settings (you’re using decouple.config — keep it)
     ssl_settings = {
-        'store_id': config('store_id'),
+        'store_id':  config('store_id'),
         'store_pass': config('store_pass'),
         'issandbox': True
     }
+    
     sslcz = SSLCOMMERZ(ssl_settings)
     
     # post_body = {}
@@ -161,30 +178,62 @@ def initiate_payment(request):
     # post_body['product_category'] = "General"
     # post_body['product_profile'] = "general"
     
+     # 5) Build session payload (SSLCommerz likes strings for amounts)
     post_body = {
         'total_amount': str(order.total_price),
         'currency': "BDT",
         'success_url': f"{django_settings.BACKEND_URL}/api/v1/payment/success/",
-        'fail_url': f"{django_settings.BACKEND_URL}/api/v1/payment/fail/",
-        'cancel_url': f"{django_settings.BACKEND_URL}/api/v1/payment/cancel/",
+        'fail_url':    f"{django_settings.BACKEND_URL}/api/v1/payment/fail/",
+        'cancel_url':  f"{django_settings.BACKEND_URL}/api/v1/payment/cancel/",
         'emi_option': 0,
-        'cus_name': f"{user.first_name} {user.last_name}".strip() or user.username,
+        'cus_name':  (f"{user.first_name} {user.last_name}".strip() or user.username),
         'cus_email': user.email,
         'cus_phone': getattr(user, 'phone_number', '') or 'N/A',
-        'cus_add1': getattr(user, 'address', '') or 'N/A',
+        'cus_add1':  getattr(user, 'address', '') or 'N/A',
         'cus_city': "Dhaka",
         'cus_country': "Bangladesh",
-        'shipping_method': "Courier",
+        'shipping_method': "NO",
         'multi_card_name': "",
         'num_of_item': order.items.count(),
         'product_name': "E-commerce Products",
         'product_category': "General",
         'product_profile': "general",
-        'tran_id': str(order.id),
+        'tran_id': f"order_{order.id}",
     }
 
-    response = sslcz.createSession(post_body)  # API response
-
-    if response.get("status") == 'SUCCESS':
-        return Response({"payment_url": response['GatewayPageURL']})
+    # 6) Create session and return the redirect URL
+    response = sslcz.createSession(post_body)
+    if response.get("status") == "SUCCESS":
+        return Response({"payment_url": response.get("GatewayPageURL")})
     return Response({"error": "Payment initiation failed"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+def payment_success(request):
+    print("Request Data:", request.data.get("tran_id"))
+    order_id = request.data.get("tran_id").split('_')[1]
+    order = Order.objects.get(id=order_id)
+    order.status = "Ready To Ship"
+    order.save()
+    return HttpResponseRedirect(f"{django_settings.FRONTEND_URL}dashboard")
+
+
+@api_view(['POST'])
+def payment_cancel(request):
+    return HttpResponseRedirect(f"{django_settings.FRONTEND_URL}dashboard")
+
+
+@api_view(['POST'])
+def payment_fail(request):
+    print("Inside fail")
+    return HttpResponseRedirect(f"{django_settings.FRONTEND_URL}dashboard")
+
+
+# class HasOrderedProduct(api_view):
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request, product_id):
+#         user = request.user
+#         has_ordered = OrderItem.objects.filter(
+#             order__user=user, product_id=product_id).exists()
+#         return Response({"hasOrdered": has_ordered})
