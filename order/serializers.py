@@ -27,33 +27,28 @@ class AddCartItemSerializer(serializers.ModelSerializer):
 
     def validate_product_id(self, value):
         if not Product.objects.filter(pk=value).exists():
-            raise serializers.ValidationError(
-                f"Product with id {value} does not exists")
+            raise serializers.ValidationError(f"Product with id {value} does not exist")
         return value
 
     def save(self, **kwargs):
-        cart_id = self.context['cart_id']
-        product_id = self.validated_data['product_id']
-        quantity = self.validated_data['quantity']
+        cart_id   = self.context['cart_id']
+        product_id= self.validated_data['product_id']
+        quantity  = self.validated_data['quantity']
 
+        print("Adding to cart:", cart_id, product_id, quantity)
         with transaction.atomic():
             try:
-                cart_item = (
-                    CartItem.objects
-                    .select_for_update()
-                    .get(cart_id=cart_id, product_id=product_id)
-                )
-                CartItem.objects.filter(pk=cart_item.pk).update(quantity=F('quantity') + quantity)
-                cart_item.refresh_from_db(fields=['quantity'])
+                ci = (CartItem.objects
+                      .select_for_update()
+                      .get(cart_id=cart_id, product_id=product_id))
+                CartItem.objects.filter(pk=ci.pk).update(quantity=F('quantity') + quantity)
+                ci.refresh_from_db(fields=['quantity'])
             except CartItem.DoesNotExist:
-                cart_item = CartItem.objects.create(
+                ci = CartItem.objects.create(
                     cart_id=cart_id, product_id=product_id, quantity=quantity
                 )
-
-        self.instance = cart_item
+        self.instance = ci
         return self.instance
-
-    
 
 
 class UpdateCartItemSerializer(serializers.ModelSerializer):

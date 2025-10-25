@@ -48,16 +48,18 @@ class CartItemViewSet(ModelViewSet):
         return CartItemSerializer
 
     def get_serializer_context(self):
+        print("Getting serializer context", self.kwargs)
         ctx = super().get_serializer_context()
         if getattr(self, 'swagger_fake_view', False):
             return ctx
-        
-        ctx.update({'cart_id': self.kwargs.get('cart_pk')})
+        ctx.update({'cart_id': self.kwargs.get('cart__pk')})
         return ctx
 
     def get_queryset(self):
-        return CartItem.objects.select_related('product', 'cart').filter(cart_id=self.kwargs.get('cart_pk'), cart__user=self.request.user)
-
+        return (CartItem.objects
+                .select_related('product','cart')
+                .filter(cart_id=self.kwargs.get('cart__pk'),
+                        cart__user=self.request.user))
 
 class OrderViewset(ModelViewSet):
     http_method_names = ['get', 'post', 'delete', 'patch', 'head', 'options']
