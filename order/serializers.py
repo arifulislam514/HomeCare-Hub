@@ -31,7 +31,8 @@ class AddCartItemSerializer(serializers.ModelSerializer):
             cart_item = CartItem.objects.get(
                 cart_id=cart_id, product_id=product_id)
             cart_item.quantity += quantity
-            self.instance = cart_item.save()
+            cart_item.save(update_fields=['quantity'])
+            self.instance = cart_item
         except CartItem.DoesNotExist:
             self.instance = CartItem.objects.create(
                 cart_id=cart_id, **self.validated_data)
@@ -58,7 +59,7 @@ class CartItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CartItem
-        fields = ['id', 'product', 'quantity', 'product', 'total_price']
+        fields = ['id', 'product', 'quantity', 'total_price']
 
     def get_total_price(self, cart_item: CartItem):
         return cart_item.quantity * cart_item.product.price

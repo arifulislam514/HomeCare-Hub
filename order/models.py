@@ -3,6 +3,7 @@ from django.core.validators import MinValueValidator
 from users.models import User
 from product.models import Product
 from uuid import uuid4
+from django.db.models import UniqueConstraint
 # Create your models here.
 
 
@@ -23,7 +24,9 @@ class CartItem(models.Model):
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
 
     class Meta:
-        unique_together = [['cart', 'product']]
+        constraints = [
+            UniqueConstraint(fields=['cart', 'product'], name='uniq_cart_product')
+        ]
 
     def __str__(self):
         return f"{self.quantity} x {self.product.name}"

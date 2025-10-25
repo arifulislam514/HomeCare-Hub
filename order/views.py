@@ -12,7 +12,9 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from rest_framework import status
 from sslcommerz_lib import SSLCOMMERZ 
-from django.conf import settings
+# from django.conf import settings
+from django.conf import settings as django_settings
+from decimal import Decimal, InvalidOperation
 
 
 class CartViewSet(CreateModelMixin, RetrieveModelMixin, DestroyModelMixin, GenericViewSet):
@@ -20,8 +22,14 @@ class CartViewSet(CreateModelMixin, RetrieveModelMixin, DestroyModelMixin, Gener
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        Cart.objects.get_or_create(user=self.request.user)
 
+    def create(self, request, *args, **kwargs):
+        cart, created = Cart.objects.get_or_create(user=request.user)
+        serializer = self.get_serializer(cart)
+        status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(serializer.data, status=status_code)
+    
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Cart.objects.none()
@@ -29,6 +37,7 @@ class CartViewSet(CreateModelMixin, RetrieveModelMixin, DestroyModelMixin, Gener
 
 
 class CartItemViewSet(ModelViewSet):
+    permission_classes = [IsAuthenticated]
     http_method_names = ['get', 'post', 'patch', 'delete']
 
     def get_serializer_class(self):
@@ -39,14 +48,15 @@ class CartItemViewSet(ModelViewSet):
         return CartItemSerializer
 
     def get_serializer_context(self):
-        context = super().get_serializer_context()
+        ctx = super().get_serializer_context()
         if getattr(self, 'swagger_fake_view', False):
-            return context
-
-        return {'cart_id': self.kwargs.get('cart_pk')}
+            return ctx
+        
+        ctx.update({'cart_id': self.kwargs.get('cart_pk')})
+        return ctx
 
     def get_queryset(self):
-        return CartItem.objects.select_related('product').filter(cart_id=self.kwargs.get('cart_pk'))
+        return CartItem.objects.select_related('product', 'cart').filter(cart_id=self.kwargs.get('cart_pk'), cart__user=self.request.user)
 
 
 class OrderViewset(ModelViewSet):
@@ -65,7 +75,8 @@ class OrderViewset(ModelViewSet):
             order, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response({'status': f'Order status updated to {request.data['status']}'})
+        new_status = serializer.validated_data.get('status', order.status)
+        return Response({"status": f"Order status updated to {new_status}"})
 
     def get_permissions(self):
         if self.action in ['update_status', 'destroy']:
@@ -96,36 +107,79 @@ class OrderViewset(ModelViewSet):
     
 @api_view(['POST'])
 def initiate_payment(request):
+    if not request.user.is_authenticated:
+        return Response({"detail": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
+    
     user = request.user
     amount = request.data.get("amount")
     order_id = request.data.get("orderId")
     num_items = request.data.get("numItems")
-    settings = {
+    
+    try:
+        order = Order.objects.prefetch_related('items').get(pk=order_id, user=user, status=Order.NOT_PAID)
+    except Order.DoesNotExist:
+        return Response({"error": "Invalid order"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        amount = Decimal(str(amount))
+    except (InvalidOperation, TypeError):
+        return Response({"error": "Invalid amount"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if amount != order.total_price:
+        return Response({"error": "Amount mismatch"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if int(num_items) != order.items.count():
+        return Response({"error": "Item count mismatch"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    ssl_settings = {
         'store_id': config('store_id'),
         'store_pass': config('store_pass'),
         'issandbox': True
     }
-    sslcz = SSLCOMMERZ(settings)
-    post_body = {}
-    post_body['total_amount'] = amount
-    post_body['currency'] = "BDT"
-    post_body['success_url'] = f"{settings.BACKEND_URL}/api/v1/payment/success/"
-    post_body['fail_url'] = f"{settings.BACKEND_URL}/api/v1/payment/fail/"
-    post_body['cancel_url'] = f"{settings.BACKEND_URL}/api/v1/payment/cancel/"
-    post_body['cancel_url'] = f"{settings.BACKEND_URL}/api/v1/payment/cancel/"
-    post_body['emi_option'] = 0
-    post_body['cus_name'] = f"{user.first_name} {user.last_name}"
-    post_body['cus_email'] = user.email
-    post_body['cus_phone'] = user.phone_number
-    post_body['cus_add1'] = user.address
-    post_body['cus_city'] = "Dhaka"
-    post_body['cus_country'] = "Bangladesh"
-    post_body['shipping_method'] = "Courier"
-    post_body['multi_card_name'] = ""
-    post_body['num_of_item'] = num_items
-    post_body['product_name'] = "E-commerce Products"
-    post_body['product_category'] = "General"
-    post_body['product_profile'] = "general"
+    sslcz = SSLCOMMERZ(ssl_settings)
+    
+    # post_body = {}
+    # post_body['total_amount'] = amount
+    # post_body['currency'] = "BDT"
+    # post_body['success_url'] = f"{settings.BACKEND_URL}/api/v1/payment/success/"
+    # post_body['fail_url'] = f"{settings.BACKEND_URL}/api/v1/payment/fail/"
+    # post_body['cancel_url'] = f"{settings.BACKEND_URL}/api/v1/payment/cancel/"
+    # post_body['cancel_url'] = f"{settings.BACKEND_URL}/api/v1/payment/cancel/"
+    # post_body['emi_option'] = 0
+    # post_body['cus_name'] = f"{user.first_name} {user.last_name}"
+    # post_body['cus_email'] = user.email
+    # post_body['cus_phone'] = user.phone_number
+    # post_body['cus_add1'] = user.address
+    # post_body['cus_city'] = "Dhaka"
+    # post_body['cus_country'] = "Bangladesh"
+    # post_body['shipping_method'] = "Courier"
+    # post_body['multi_card_name'] = ""
+    # post_body['num_of_item'] = num_items
+    # post_body['product_name'] = "E-commerce Products"
+    # post_body['product_category'] = "General"
+    # post_body['product_profile'] = "general"
+    
+    post_body = {
+        'total_amount': str(order.total_price),
+        'currency': "BDT",
+        'success_url': f"{django_settings.BACKEND_URL}/api/v1/payment/success/",
+        'fail_url': f"{django_settings.BACKEND_URL}/api/v1/payment/fail/",
+        'cancel_url': f"{django_settings.BACKEND_URL}/api/v1/payment/cancel/",
+        'emi_option': 0,
+        'cus_name': f"{user.first_name} {user.last_name}".strip() or user.username,
+        'cus_email': user.email,
+        'cus_phone': getattr(user, 'phone_number', '') or 'N/A',
+        'cus_add1': getattr(user, 'address', '') or 'N/A',
+        'cus_city': "Dhaka",
+        'cus_country': "Bangladesh",
+        'shipping_method': "Courier",
+        'multi_card_name': "",
+        'num_of_item': order.items.count(),
+        'product_name': "E-commerce Products",
+        'product_category': "General",
+        'product_profile': "general",
+        'tran_id': str(order.id),
+    }
 
     response = sslcz.createSession(post_body)  # API response
 
