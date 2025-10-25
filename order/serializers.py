@@ -1,3 +1,5 @@
+from django.db import transaction
+from django.db.models import F
 from rest_framework import serializers
 from order.models import Cart, CartItem, Order, OrderItem
 from product.models import Product
@@ -17,33 +19,41 @@ class SimpleProductSerializer(serializers.ModelSerializer):
 
 class AddCartItemSerializer(serializers.ModelSerializer):
     product_id = serializers.IntegerField()
+    quantity = serializers.IntegerField(min_value=1)
 
     class Meta:
         model = CartItem
         fields = ['id', 'product_id', 'quantity']
-
-    def save(self, **kwargs):
-        cart_id = self.context['cart_id']
-        product_id = self.validated_data['product_id']
-        quantity = self.validated_data['quantity']
-
-        try:
-            cart_item = CartItem.objects.get(
-                cart_id=cart_id, product_id=product_id)
-            cart_item.quantity += quantity
-            cart_item.save(update_fields=['quantity'])
-            self.instance = cart_item
-        except CartItem.DoesNotExist:
-            self.instance = CartItem.objects.create(
-                cart_id=cart_id, **self.validated_data)
-
-        return self.instance
 
     def validate_product_id(self, value):
         if not Product.objects.filter(pk=value).exists():
             raise serializers.ValidationError(
                 f"Product with id {value} does not exists")
         return value
+
+    def save(self, **kwargs):
+        cart_id = self.context['cart_id']
+        product_id = self.validated_data['product_id']
+        quantity = self.validated_data['quantity']
+
+        with transaction.atomic():
+            try:
+                cart_item = (
+                    CartItem.objects
+                    .select_for_update()
+                    .get(cart_id=cart_id, product_id=product_id)
+                )
+                CartItem.objects.filter(pk=cart_item.pk).update(quantity=F('quantity') + quantity)
+                cart_item.refresh_from_db(fields=['quantity'])
+            except CartItem.DoesNotExist:
+                cart_item = CartItem.objects.create(
+                    cart_id=cart_id, product_id=product_id, quantity=quantity
+                )
+
+        self.instance = cart_item
+        return self.instance
+
+    
 
 
 class UpdateCartItemSerializer(serializers.ModelSerializer):
