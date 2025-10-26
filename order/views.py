@@ -125,7 +125,7 @@ def initiate_payment(request):
     # 1) Fetch order FIRST (so we can safely refer to it later)
     try:
         order = Order.objects.prefetch_related('items').get(
-            pk=order_id, user=user, status=Order.NOT_PAID
+            pk=order_id, user=user, status=Order.UNPAID
         )
     except Order.DoesNotExist:
         return Response({"error": "Invalid order"}, status=status.HTTP_400_BAD_REQUEST)
@@ -181,7 +181,7 @@ def initiate_payment(request):
      # 5) Build session payload (SSLCommerz likes strings for amounts)
     post_body = {
         'total_amount': str(order.total_price),
-        'currency': "BDT",
+        'currency': "USD",
         'success_url': f"{django_settings.BACKEND_URL}/api/v1/payment/success/",
         'fail_url':    f"{django_settings.BACKEND_URL}/api/v1/payment/fail/",
         'cancel_url':  f"{django_settings.BACKEND_URL}/api/v1/payment/cancel/",
@@ -213,7 +213,7 @@ def payment_success(request):
     print("Request Data:", request.data.get("tran_id"))
     order_id = request.data.get("tran_id").split('_')[1]
     order = Order.objects.get(id=order_id)
-    order.status = "Ready To Ship"
+    order.status = "Pending"
     order.save()
     return HttpResponseRedirect(f"{django_settings.FRONTEND_URL}dashboard")
 
