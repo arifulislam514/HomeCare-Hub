@@ -1,3 +1,5 @@
+from django.forms import ValidationError
+from django.shortcuts import get_object_or_404
 from product.models import Product, Review, ProductImage
 from product.serializers import ProductSerializer, ReviewSerializer, ProductImageSerializer
 from django.db.models import Count
@@ -53,25 +55,45 @@ class ProductImageViewSet(ModelViewSet):
     serializer_class = ProductImageSerializer
     permission_classes = [IsAdminOrReadOnly]
 
+    def _product_id(self):
+        return (
+            self.kwargs.get("product__pk")   # <-- your router’s kwarg
+            or self.kwargs.get("product_pk") # other router variants
+            or self.kwargs.get("product_id") # plain path variant
+        )
+
     def get_queryset(self):
-        return ProductImage.objects.filter(product_id=self.kwargs.get('product_pk'))
+        pid = self._product_id()
+        return ProductImage.objects.filter(product_id=pid) if pid else ProductImage.objects.none()
 
     def perform_create(self, serializer):
-        serializer.save(product_id=self.kwargs.get('product_pk'))
+        pid = self._product_id()
+        if not pid:
+            raise ValidationError({"detail": "Missing product id in URL."})
+        get_object_or_404(Product, pk=pid)
+        serializer.save(product_id=pid)
 
 
 class ReviewViewSet(ModelViewSet):
     serializer_class = ReviewSerializer
     permission_classes = [IsReviewAuthorOrReadonly]
 
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
-
-    def perform_update(self, serializer):
-        serializer.save(user=self.request.user)
+    def _product_id(self):
+        return (
+            self.kwargs.get("product__pk")
+            or self.kwargs.get("product_pk")
+            or self.kwargs.get("product_id")
+        )
 
     def get_queryset(self):
-        return Review.objects.filter(product_id=self.kwargs.get('product_pk'))
+        pid = self._product_id()
+        return Review.objects.filter(product_id=pid) if pid else Review.objects.none()
 
     def get_serializer_context(self):
-        return {'product_id': self.kwargs.get('product_pk')}
+        return {"product_id": self._product_id()}
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user, product_id=self._product_id())
+
+    def perform_update(self, serializer):
+        serializer.save(user=self.request.user, product_id=self._product_id())
