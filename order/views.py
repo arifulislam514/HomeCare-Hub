@@ -10,9 +10,10 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import action
 from order.services import OrderService
 from rest_framework.response import Response
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework import status
 from sslcommerz_lib import SSLCOMMERZ 
+from rest_framework.permissions import AllowAny
 # from django.conf import settings
 from django.conf import settings as django_settings
 from decimal import Decimal, InvalidOperation
@@ -154,7 +155,6 @@ def initiate_payment(request):
         'store_pass': config('store_pass'),
         'issandbox': True
     }
-    
     sslcz = SSLCOMMERZ(ssl_settings)
     
     # post_body = {}
@@ -179,12 +179,14 @@ def initiate_payment(request):
     # post_body['product_profile'] = "general"
     
      # 5) Build session payload (SSLCommerz likes strings for amounts)
+     
+    backend = django_settings.BACKEND_URL.rstrip('/')
     post_body = {
-        'total_amount': str(order.total_price),
-        'currency': "USD",
-        'success_url': f"{django_settings.BACKEND_URL}/api/v1/payment/success/",
-        'fail_url':    f"{django_settings.BACKEND_URL}/api/v1/payment/fail/",
-        'cancel_url':  f"{django_settings.BACKEND_URL}/api/v1/payment/cancel/",
+        'total_amount': str(order.total_price),   # SSLCommerz likes string
+        'currency': "BDT",                        # use BDT for SSLCommerz
+        'success_url': f"{backend}/api/v1/payment/success/",
+        'fail_url':    f"{backend}/api/v1/payment/fail/",
+        'cancel_url':  f"{backend}/api/v1/payment/cancel/",
         'emi_option': 0,
         'cus_name':  (f"{user.first_name} {user.last_name}".strip() or user.username),
         'cus_email': user.email,
@@ -207,27 +209,39 @@ def initiate_payment(request):
         return Response({"payment_url": response.get("GatewayPageURL")})
     return Response({"error": "Payment initiation failed"}, status=status.HTTP_400_BAD_REQUEST)
 
+def _fe(path: str) -> str:
+    return f"{django_settings.FRONTEND_URL.rstrip('/')}{path}"
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
+@authentication_classes([])   # callbacks come from SSLCommerz, no JWT/cookie
 def payment_success(request):
-    print("Request Data:", request.data.get("tran_id"))
-    order_id = request.data.get("tran_id").split('_')[1]
-    order = Order.objects.get(id=order_id)
-    order.status = "Pending"
-    order.save()
-    return HttpResponseRedirect(f"{django_settings.FRONTEND_URL}dashboard")
+    tran_id = request.data.get("tran_id", "")
 
+    # Update order status (defensively)
+    if '_' in tran_id:
+        order_id = tran_id.split('_', 1)[1]
+        try:
+            order = Order.objects.get(id=order_id)
+            order.status = Order.PENDING  # use your constant
+            order.save(update_fields=['status'])
+        except Order.DoesNotExist:
+            pass
+
+    # Redirect the user to your React page (GET)
+    return HttpResponseRedirect(_fe("/payment/success"))
 
 @api_view(['POST'])
-def payment_cancel(request):
-    return HttpResponseRedirect(f"{django_settings.FRONTEND_URL}dashboard")
-
-
-@api_view(['POST'])
+@permission_classes([AllowAny])
+@authentication_classes([])
 def payment_fail(request):
-    print("Inside fail")
-    return HttpResponseRedirect(f"{django_settings.FRONTEND_URL}dashboard")
+    return HttpResponseRedirect(_fe("/payment/fail"))
 
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@authentication_classes([])
+def payment_cancel(request):
+    return HttpResponseRedirect(_fe("/payment/cancel"))
 
 # class HasOrderedProduct(api_view):
 #     permission_classes = [IsAuthenticated]
