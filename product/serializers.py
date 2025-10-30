@@ -37,7 +37,7 @@ class SimpleUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = get_user_model()
-        fields = ['id', 'name']
+        fields = ['id', 'first_name', "email", "name"]
 
     def get_current_user_name(self, obj):
         return obj.get_full_name()
