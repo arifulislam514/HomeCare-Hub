@@ -37,7 +37,7 @@ class SimpleUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = get_user_model()
-        fields = ['id',"name"]
+        fields = ['id', 'first_name', "email", "name"]
 
     def get_current_user_name(self, obj):
         return obj.get_full_name()
@@ -55,6 +55,6 @@ class ReviewSerializer(serializers.ModelSerializer):
     def get_user(self, obj):
         return SimpleUserSerializer(obj.user).data
 
-    def create(self, validated_data):
-        product_id = self.context['product_id']
-        return Review.objects.create(product_id=product_id, **validated_data)
+    # def create(self, validated_data):
+    #     product_id = self.context['product_id']
+    #     return Review.objects.create(product_id=product_id, **validated_data)

@@ -156,29 +156,6 @@ def initiate_payment(request):
         'issandbox': True
     }
     sslcz = SSLCOMMERZ(ssl_settings)
-    
-    # post_body = {}
-    # post_body['total_amount'] = amount
-    # post_body['currency'] = "BDT"
-    # post_body['success_url'] = f"{settings.BACKEND_URL}/api/v1/payment/success/"
-    # post_body['fail_url'] = f"{settings.BACKEND_URL}/api/v1/payment/fail/"
-    # post_body['cancel_url'] = f"{settings.BACKEND_URL}/api/v1/payment/cancel/"
-    # post_body['cancel_url'] = f"{settings.BACKEND_URL}/api/v1/payment/cancel/"
-    # post_body['emi_option'] = 0
-    # post_body['cus_name'] = f"{user.first_name} {user.last_name}"
-    # post_body['cus_email'] = user.email
-    # post_body['cus_phone'] = user.phone_number
-    # post_body['cus_add1'] = user.address
-    # post_body['cus_city'] = "Dhaka"
-    # post_body['cus_country'] = "Bangladesh"
-    # post_body['shipping_method'] = "Courier"
-    # post_body['multi_card_name'] = ""
-    # post_body['num_of_item'] = num_items
-    # post_body['product_name'] = "E-commerce Products"
-    # post_body['product_category'] = "General"
-    # post_body['product_profile'] = "general"
-    
-     # 5) Build session payload (SSLCommerz likes strings for amounts)
      
     backend = django_settings.BACKEND_URL.rstrip('/')
     post_body = {
